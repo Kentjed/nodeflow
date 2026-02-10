@@ -251,6 +251,7 @@
   <div class="sep"></div>
   <button onclick="fitView()">⊡ Fit</button>
   <button onclick="togglePhysics()">⟳ Physics: <span id="physToggle">ON</span></button>
+  <button onclick="toggleLiteMode()">⚡ <span id="liteToggle">FULL</span></button>
   <div class="sep"></div>
   <button onclick="exportJSON()">↓ Save</button>
   <button onclick="document.getElementById('fileInput').click()">↑ Load</button>
@@ -299,6 +300,16 @@ let editingNode = null;
 let animFrame = null;
 let dirty = false;
 
+// Performance
+let liteMode = false;
+let frameCount = 0;
+let slowFrames = 0;
+let lastFrameTime = 0;
+let physicsFrame = 0;
+let lastPan = { x: null, y: null };
+let lastZoom = null;
+let bgDirty = true;
+
 const NODE_COLORS = ['#7c6fef', '#ef6f8a', '#6fefb2', '#efcf6f', '#6fb8ef', '#ef8f6f', '#b86fef', '#6fefd4'];
 const NODE_RADIUS_BASE = 8;
 const NODE_RADIUS_ROOT = 12;
@@ -317,43 +328,54 @@ const mainCanvas = document.getElementById('mainCanvas');
 const ctx = mainCanvas.getContext('2d');
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = liteMode ? 1 : (window.devicePixelRatio || 1);
   bgCanvas.width = window.innerWidth * dpr;
   bgCanvas.height = window.innerHeight * dpr;
   bgCanvas.style.width = window.innerWidth + 'px';
   bgCanvas.style.height = window.innerHeight + 'px';
-  bgCtx.scale(dpr, dpr);
+  bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   mainCanvas.width = window.innerWidth * dpr;
   mainCanvas.height = window.innerHeight * dpr;
   mainCanvas.style.width = window.innerWidth + 'px';
   mainCanvas.style.height = window.innerHeight + 'px';
-  ctx.scale(dpr, dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+  bgDirty = true;
   drawBackground();
 }
 
 window.addEventListener('resize', resize);
 
 function drawBackground() {
+  // Only redraw if pan/zoom changed
+  if (!bgDirty && lastPan.x === pan.x && lastPan.y === pan.y && lastZoom === zoom) return;
+  lastPan.x = pan.x; lastPan.y = pan.y; lastZoom = zoom;
+  bgDirty = false;
+
   const w = window.innerWidth;
   const h = window.innerHeight;
   bgCtx.fillStyle = '#1e1e21';
   bgCtx.fillRect(0, 0, w, h);
 
-  // Subtle dot grid
+  if (liteMode) return; // Skip dot grid entirely
+
   const gridSize = 30;
-  const offsetX = pan.x % (gridSize * zoom);
-  const offsetY = pan.y % (gridSize * zoom);
+  const step = gridSize * zoom;
+  if (step < 8) return; // Skip if zoomed out too far
+
+  const offsetX = pan.x % step;
+  const offsetY = pan.y % step;
 
   bgCtx.fillStyle = '#2a2a2e';
-  for (let x = offsetX; x < w; x += gridSize * zoom) {
-    for (let y = offsetY; y < h; y += gridSize * zoom) {
-      bgCtx.beginPath();
+  bgCtx.beginPath();
+  for (let x = offsetX; x < w; x += step) {
+    for (let y = offsetY; y < h; y += step) {
+      bgCtx.moveTo(x + 0.8, y);
       bgCtx.arc(x, y, 0.8, 0, Math.PI * 2);
-      bgCtx.fill();
     }
   }
+  bgCtx.fill(); // Single fill call for all dots
 }
 
 // ── Node helpers ──
@@ -521,8 +543,8 @@ function render() {
       (e.to === selectedNode && e.from === node.id)
     );
 
-    // Glow
-    if (isSelected || isHovered) {
+    // Glow (skip in lite mode)
+    if (!liteMode && (isSelected || isHovered)) {
       const grad = ctx.createRadialGradient(p.x, p.y, r, p.x, p.y, r * 4);
       grad.addColorStop(0, (node.color || '#7c6fef') + '40');
       grad.addColorStop(1, 'transparent');
@@ -532,11 +554,13 @@ function render() {
       ctx.fill();
     }
 
-    // Outer ring
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r + 2 * zoom, 0, Math.PI * 2);
-    ctx.fillStyle = (isSelected || isHovered) ? (node.color || '#7c6fef') + '60' : 'transparent';
-    ctx.fill();
+    // Outer ring (skip in lite mode)
+    if (!liteMode) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 2 * zoom, 0, Math.PI * 2);
+      ctx.fillStyle = (isSelected || isHovered) ? (node.color || '#7c6fef') + '60' : 'transparent';
+      ctx.fill();
+    }
 
     // Node circle
     ctx.beginPath();
@@ -598,11 +622,46 @@ function render() {
   document.getElementById('zoomText').textContent = Math.round(zoom * 100) + '%';
 }
 
-function loop() {
-  simulate();
+function loop(timestamp) {
+  // Auto-detect slow frames
+  if (lastFrameTime) {
+    const dt = timestamp - lastFrameTime;
+    frameCount++;
+    if (dt > 33) slowFrames++; // Below 30fps
+    // Check every 60 frames
+    if (frameCount >= 60) {
+      if (!liteMode && slowFrames > 20) {
+        liteMode = true;
+        resize();
+        showToast('⚡ Lite mode (auto) — low performance detected');
+        updateLiteButton();
+      }
+      frameCount = 0;
+      slowFrames = 0;
+    }
+  }
+  lastFrameTime = timestamp;
+
+  // Throttle physics in lite mode: every other frame
+  physicsFrame++;
+  if (!liteMode || physicsFrame % 2 === 0) {
+    simulate();
+  }
+
   updatePanAnimation();
   render();
   animFrame = requestAnimationFrame(loop);
+}
+
+function toggleLiteMode() {
+  liteMode = !liteMode;
+  resize();
+  updateLiteButton();
+  showToast(liteMode ? '⚡ Lite mode ON' : '✦ Full mode ON');
+}
+
+function updateLiteButton() {
+  document.getElementById('liteToggle').textContent = liteMode ? 'LITE' : 'FULL';
 }
 
 // ── Hit testing ──
