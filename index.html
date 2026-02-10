@@ -238,7 +238,7 @@
 
 <div class="title-bar">
   <span class="logo">NodeFlow</span>
-  <span class="hint">click node to select · drag to fling · double-click canvas to add · Tab to branch</span>
+  <span class="hint">drag to fling · arrows to navigate · Tab to branch · Enter to rename</span>
 </div>
 
 <div class="status-bar">
@@ -600,6 +600,7 @@ function render() {
 
 function loop() {
   simulate();
+  updatePanAnimation();
   render();
   animFrame = requestAnimationFrame(loop);
 }
@@ -804,6 +805,74 @@ mainCanvas.addEventListener('touchend', (e) => {
   touchStartDist = null;
 });
 
+// ── Smooth pan to node ──
+let panTarget = null;
+let panAnimating = false;
+
+function panToNode(id, duration = 300) {
+  const node = nodes.find(n => n.id === id);
+  if (!node) return;
+  const targetPanX = window.innerWidth / 2 - node.x * zoom;
+  const targetPanY = window.innerHeight / 2 - node.y * zoom;
+  panTarget = { x: targetPanX, y: targetPanY, startX: pan.x, startY: pan.y, start: performance.now(), duration };
+  panAnimating = true;
+}
+
+function updatePanAnimation() {
+  if (!panAnimating || !panTarget) return;
+  const t = Math.min(1, (performance.now() - panTarget.start) / panTarget.duration);
+  // Ease out cubic
+  const ease = 1 - Math.pow(1 - t, 3);
+  pan.x = panTarget.startX + (panTarget.x - panTarget.startX) * ease;
+  pan.y = panTarget.startY + (panTarget.y - panTarget.startY) * ease;
+  if (t >= 1) { panAnimating = false; panTarget = null; }
+}
+
+// ── Arrow key navigation ──
+function findNodeInDirection(fromId, direction) {
+  const from = nodes.find(n => n.id === fromId);
+  if (!from) return null;
+
+  // Direction angles: right=0, down=PI/2, left=PI, up=-PI/2
+  const dirAngles = {
+    ArrowRight: 0,
+    ArrowDown: Math.PI / 2,
+    ArrowLeft: Math.PI,
+    ArrowUp: -Math.PI / 2
+  };
+  const targetAngle = dirAngles[direction];
+  if (targetAngle === undefined) return null;
+
+  let best = null;
+  let bestScore = Infinity;
+
+  nodes.forEach(node => {
+    if (node.id === fromId) return;
+    const dx = node.x - from.x;
+    const dy = node.y - from.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1) return;
+
+    const angle = Math.atan2(dy, dx);
+    let angleDiff = angle - targetAngle;
+    // Normalize to [-PI, PI]
+    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+    // Only consider nodes within 90 degrees of the direction
+    if (Math.abs(angleDiff) > Math.PI / 2) return;
+
+    // Score: weight angle difference heavily, plus distance
+    const score = Math.abs(angleDiff) * 300 + dist;
+    if (score < bestScore) {
+      bestScore = score;
+      best = node;
+    }
+  });
+
+  return best;
+}
+
 // Keyboard
 document.addEventListener('keydown', (e) => {
   if (editingNode) {
@@ -817,6 +886,25 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Arrow key navigation
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+    e.preventDefault();
+    if (!selectedNode) {
+      // Select first/root node
+      const root = nodes.find(n => n.isRoot) || nodes[0];
+      if (root) {
+        selectedNode = root.id;
+        panToNode(root.id);
+      }
+      return;
+    }
+    const target = findNodeInDirection(selectedNode, e.key);
+    if (target) {
+      selectedNode = target.id;
+      panToNode(target.id);
+    }
+  }
+
   if (e.key === 'Tab' && selectedNode) {
     e.preventDefault();
     addChild(selectedNode);
@@ -825,6 +913,9 @@ document.addEventListener('keydown', (e) => {
     deleteNode(selectedNode);
   }
   if (e.key === 'F2' && selectedNode) {
+    startEdit(selectedNode);
+  }
+  if (e.key === 'Enter' && selectedNode) {
     startEdit(selectedNode);
   }
   if (e.key === 'Escape') {
