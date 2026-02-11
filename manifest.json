@@ -1,0 +1,22 @@
+{
+  "name": "NodeFlow",
+  "short_name": "NodeFlow",
+  "description": "Mind mapping with node graphs and notes",
+  "start_url": "/nodeflow/",
+  "display": "standalone",
+  "background_color": "#1e1e21",
+  "theme_color": "#1e1e21",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
