@@ -262,28 +262,58 @@ function deleteNode(id){
   page.nodes=page.nodes.filter(n=>!del.has(n.id));
   page.edges=page.edges.filter(e=>!del.has(e.from)&&!del.has(e.to));
   if(selectedNode===id)selectedNode=null;
-  rnm();dirty=true;renderSidebar();
+  rnm();dirty=true;renderSidebar();physicsBurst(30);
+}
+
+function getDepth(nodeId){
+  let depth=0,cur=nodeId;
+  const edges=ce();
+  for(let i=0;i<20;i++){// max 20 to prevent infinite loop
+    const parent=edges.find(e=>e.to===cur);
+    if(!parent)break;
+    depth++;cur=parent.from;
+  }
+  return depth;
 }
 
 function addChild(pid){
   const p=nodeMap[pid];if(!p)return;
-  const a=Math.random()*Math.PI*2,d=LD*0.7;
+  const depth=getDepth(pid);
+  // Shrink distance: 100% at depth 0, 65% at depth 1, 45% at depth 2, min 40%
+  const scale=Math.max(0.4, 1 - depth*0.35);
+  const d=LD*0.7*scale;
+  const a=Math.random()*Math.PI*2;
   const id=createNode('',p.x+Math.cos(a)*d,p.y+Math.sin(a)*d,pid);
-  selectedNode=id;newNodePending=id;startEdit(id);return id;
+  selectedNode=id;newNodePending=id;startEdit(id);
+  physicsBurst();
+  return id;
 }
 
 function addNodeAtCenter(){
   const wx=(canvas.width/2-pan.x)/zoom,wy=(canvas.height/2-pan.y)/zoom;
   const id=createNode('',wx+(Math.random()-0.5)*40,wy+(Math.random()-0.5)*40,null,false);
   selectedNode=id;newNodePending=id;startEdit(id);
+  physicsBurst();
 }
 
 function cancelNewNode(){if(newNodePending){deleteNode(newNodePending);newNodePending=null}}
 
 // ═══ PHYSICS ═══
+let burstRemaining=0;
+
+function physicsBurst(frames){
+  burstRemaining=Math.max(burstRemaining,frames||50);
+  wake();
+}
+
 function simulate(){
-  if(!physicsEnabled)return;
+  const isBurst=burstRemaining>0;
+  if(!physicsEnabled&&!isBurst)return;
+  if(isBurst)burstRemaining--;
+
   const nodes=cn(),edges=ce(),n=nodes.length;
+
+  // Repulsion between all pairs
   for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
     const a=nodes[i],b=nodes[j];
     let dx=b.x-a.x,dy=b.y-a.y,ds=dx*dx+dy*dy;
@@ -291,13 +321,34 @@ function simulate(){
     const fx=(dx/dist)*f,fy=(dy/dist)*f;
     if(!a.pinned){a.vx-=fx;a.vy-=fy}if(!b.pinned){b.vx+=fx;b.vy+=fy}
   }
+
+  // Label overlap prevention — extra repulsion when labels would collide
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+    const a=nodes[i],b=nodes[j];
+    const dx=b.x-a.x,dy=b.y-a.y;
+    const dist=Math.sqrt(dx*dx+dy*dy)||1;
+    // Estimate label width: ~7px per character, labels sit below nodes
+    const aW=(a.label||'Untitled').length*7+20;
+    const bW=(b.label||'Untitled').length*7+20;
+    const minDist=(aW+bW)/2+10;
+    if(dist<minDist){
+      const push=(minDist-dist)*0.05;
+      const fx=(dx/dist)*push,fy=(dy/dist)*push;
+      if(!a.pinned){a.vx-=fx;a.vy-=fy}if(!b.pinned){b.vx+=fx;b.vy+=fy}
+    }
+  }
+
+  // Attraction along edges — use depth-aware target distance
   for(let i=0;i<edges.length;i++){
     const e=edges[i],a=nodeMap[e.from],b=nodeMap[e.to];
     if(!a||!b)continue;
+    const depth=getDepth(e.to);
+    const targetDist=LD*Math.max(0.4, 1-depth*0.25);
     let dx=b.x-a.x,dy=b.y-a.y,dist=Math.sqrt(dx*dx+dy*dy)||1;
-    const f=(dist-LD)*ATT,fx=(dx/dist)*f,fy=(dy/dist)*f;
+    const f=(dist-targetDist)*ATT,fx=(dx/dist)*f,fy=(dy/dist)*f;
     if(!a.pinned){a.vx+=fx;a.vy+=fy}if(!b.pinned){b.vx-=fx;b.vy-=fy}
   }
+
   let cx=0,cy=0;
   for(let i=0;i<n;i++){cx+=nodes[i].x;cy+=nodes[i].y}
   cx/=n||1;cy/=n||1;
@@ -400,7 +451,7 @@ function wake(){settleCount=0;if(sleeping){sleeping=false;requestAnimationFrame(
 function loop(){
   if(sleeping)return;
   simulate();updatePan();render();
-  if(!physicsEnabled&&!draggingNode&&!panAnimating&&!panning){
+  if(!physicsEnabled&&!draggingNode&&!panAnimating&&!panning&&burstRemaining<=0){
     settleCount++;if(settleCount>10){sleeping=true;return}
   }else settleCount=0;
   requestAnimationFrame(loop);
@@ -469,7 +520,7 @@ canvas.addEventListener('mouseup',()=>{
   if(isMobile)return;
   if(draggingNode){
     const n=nodeMap[draggingNode];if(n)n.pinned=false;
-    draggingNode=null;dirty=true;wake();
+    draggingNode=null;dirty=true;physicsBurst(30);
   }
   panning=false;canvas.classList.remove('grabbing');
 });
@@ -480,7 +531,7 @@ canvas.addEventListener('dblclick',e=>{
   const mx=e.clientX-rect.left,my=e.clientY-rect.top;
   const node=hitTest(mx,my);
   if(node){openNote(node.id)}
-  else{const w=stw(mx,my);const id=createNode('',w.x,w.y,null,false);selectedNode=id;newNodePending=id;startEdit(id)}
+  else{const w=stw(mx,my);const id=createNode('',w.x,w.y,null,false);selectedNode=id;newNodePending=id;startEdit(id);physicsBurst()}
 });
 
 canvas.addEventListener('contextmenu',e=>{
@@ -591,7 +642,7 @@ canvas.addEventListener('touchend',e=>{
 
   if(draggingNode){
     const n=nodeMap[draggingNode];if(n)n.pinned=false;
-    draggingNode=null;dirty=true;wake();
+    draggingNode=null;dirty=true;physicsBurst(30);
   }
   panning=false;
 
@@ -801,7 +852,7 @@ function switchPage(id){
   stopEdit(false);
   activePageId=id;selectedNode=null;hoveredNode=null;
   pan={x:0,y:0};zoom=1;
-  rnm();renderSidebar();resizeCanvas();fitView();wake();
+  rnm();renderSidebar();resizeCanvas();fitView();physicsBurst();
   if(isMobile)closeSidebar();
 }
 
