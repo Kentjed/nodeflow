@@ -96,7 +96,7 @@
   .note-breadcrumb em{color:#333;font-style:normal}
 
   /* Subtask list in note view */
-  .note-subtasks{padding:0 16px 8px;border-bottom:1px solid #333}
+  .note-subtasks{padding:0 16px 8px;border-bottom:1px solid #333;max-height:40vh;overflow-y:auto}
   .note-subtasks-header{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#555;padding:8px 0 6px;display:flex;justify-content:space-between;align-items:center}
   .note-subtasks-header button{background:none;border:none;color:#7c6fef;font-size:14px;cursor:pointer;padding:0 4px}
   .subtask-item{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;cursor:pointer;border-radius:4px}
@@ -789,26 +789,37 @@ function refreshNoteView(){
   const cur=document.createElement('span');cur.textContent=n.label||'Untitled';cur.style.color='#c4c4c8';cur.style.cursor='default';
   bc.appendChild(cur);
 
-  // Subtasks
+  // Subtasks — full recursive tree
   const children=getChildren(openNoteId);
   const stDiv=document.getElementById('noteSubtasks');
   const stList=document.getElementById('subtaskList');
   if(children.length>0){
     stDiv.style.display='block';stList.innerHTML='';
-    children.forEach(child=>{
-      const item=document.createElement('div');item.className='subtask-item';
-      const dot=document.createElement('div');dot.className='subtask-dot';dot.style.background=child.color||'#7c6fef';
-      const label=document.createElement('span');label.className='subtask-label';label.textContent=child.label||'Untitled';
-      item.appendChild(dot);item.appendChild(label);
-      if(child.status&&child.status!=='none'){
-        const st=document.createElement('span');st.className='subtask-status';
-        st.style.background=STATUSES[child.status].bg;st.style.color=STATUSES[child.status].fg;
-        st.textContent=child.status.toUpperCase();
-        item.appendChild(st);
-      }
-      item.onclick=()=>openNote(child.id);
-      stList.appendChild(item);
-    });
+    function renderSubtree(parentId,depth){
+      getChildren(parentId).forEach(child=>{
+        const item=document.createElement('div');item.className='subtask-item';
+        item.style.paddingLeft=(depth*20)+'px';
+        const dot=document.createElement('div');dot.className='subtask-dot';dot.style.background=child.color||'#7c6fef';
+        const label=document.createElement('span');label.className='subtask-label';label.textContent=child.label||'Untitled';
+        item.appendChild(dot);item.appendChild(label);
+        if(child.status&&child.status!=='none'){
+          const st=document.createElement('span');st.className='subtask-status';
+          st.style.background=STATUSES[child.status].bg;st.style.color=STATUSES[child.status].fg;
+          st.textContent=child.status.toUpperCase();
+          item.appendChild(st);
+        }
+        const subChildren=getChildren(child.id);
+        if(subChildren.length>0){
+          const cnt=document.createElement('span');cnt.style.cssText='font-size:9px;color:#555;margin-left:4px';
+          cnt.textContent='('+subChildren.length+')';item.appendChild(cnt);
+        }
+        item.onclick=()=>openNote(child.id);
+        stList.appendChild(item);
+        // Recurse into children
+        if(subChildren.length>0)renderSubtree(child.id,depth+1);
+      });
+    }
+    renderSubtree(openNoteId,0);
   }else{stDiv.style.display='none'}
 
   updateNoteMeta();
