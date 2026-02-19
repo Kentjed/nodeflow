@@ -909,11 +909,11 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (!selectedNode) {
       const r = cn().find(n => n.isRoot) || cn()[0];
-      if (r) { selectedNode = r.id; renderGraph(); panToNode(r.id); }
+      if (r) { selectedNode = r.id; panToNode(r.id); }
       return;
     }
     const t = findDir(selectedNode, e.key);
-    if (t) { selectedNode = t.id; renderGraph(); panToNode(t.id); }
+    if (t) { selectedNode = t.id; panToNode(t.id); }
   }
 });
 
@@ -944,7 +944,7 @@ function panToNode(id) {
   const rect = graphView.getBoundingClientRect();
   const tx = rect.width / 2 - n.x * zoom;
   const ty = rect.height / 2 - n.y * zoom;
-  panTarget = { tx, ty, sx: pan.x, sy: pan.y, t0: performance.now(), dur: 250 };
+  panTarget = { tx, ty, sx: pan.x, sy: pan.y, t0: performance.now(), dur: 150 };
   if (!panAnimId) panAnimId = requestAnimationFrame(animatePan);
 }
 
@@ -955,7 +955,7 @@ function animatePan() {
   pan.x = panTarget.sx + (panTarget.tx - panTarget.sx) * ease;
   pan.y = panTarget.sy + (panTarget.ty - panTarget.sy) * ease;
   updateWorldTransform();
-  if (t >= 1) { panTarget = null; panAnimId = null; }
+  if (t >= 1) { panTarget = null; panAnimId = null; renderGraph(); }
   else panAnimId = requestAnimationFrame(animatePan);
 }
 
