@@ -909,11 +909,11 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (!selectedNode) {
       const r = cn().find(n => n.isRoot) || cn()[0];
-      if (r) { selectedNode = r.id; panToNode(r.id); }
+      if (r) { selectedNode = r.id; renderGraph(); panToNode(r.id); }
       return;
     }
     const t = findDir(selectedNode, e.key);
-    if (t) { selectedNode = t.id; panToNode(t.id); }
+    if (t) { selectedNode = t.id; renderGraph(); panToNode(t.id); }
   }
 });
 
@@ -955,7 +955,6 @@ function animatePan() {
   pan.x = panTarget.sx + (panTarget.tx - panTarget.sx) * ease;
   pan.y = panTarget.sy + (panTarget.ty - panTarget.sy) * ease;
   updateWorldTransform();
-  renderGraph();
   if (t >= 1) { panTarget = null; panAnimId = null; }
   else panAnimId = requestAnimationFrame(animatePan);
 }
