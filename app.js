@@ -957,9 +957,13 @@ function panToNode(id) {
   const rect = graphView.getBoundingClientRect();
   pan.x = rect.width / 2 - n.x * zoom;
   pan.y = rect.height / 2 - n.y * zoom;
-  updateWorldTransform(); // instant CSS-only camera snap
+  graphWorld.classList.add('smooth');
+  updateWorldTransform();
   clearTimeout(_panRenderTimer);
-  _panRenderTimer = setTimeout(() => renderGraph(), 100); // highlights after user stops
+  _panRenderTimer = setTimeout(() => {
+    graphWorld.classList.remove('smooth');
+    renderGraph();
+  }, 200);
 }
 
 // ═══════════════════════════════════════════════════════════════════
