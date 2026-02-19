@@ -921,11 +921,21 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (!selectedNode) {
       const r = cn().find(n => n.isRoot) || cn()[0];
-      if (r) { selectedNode = r.id; panToNode(r.id); }
+      if (r) {
+        const old = selectedNode;
+        selectedNode = r.id;
+        updateSelection(old, r.id);
+        if (!isNodeVisible(r.id)) panToNode(r.id);
+      }
       return;
     }
     const t = findDir(selectedNode, e.key);
-    if (t) { selectedNode = t.id; panToNode(t.id); }
+    if (t) {
+      const old = selectedNode;
+      selectedNode = t.id;
+      updateSelection(old, t.id);
+      if (!isNodeVisible(t.id)) panToNode(t.id);
+    }
   }
 });
 
@@ -951,19 +961,66 @@ function findDir(fid, dir) {
 // Pan animation
 let panTarget = null, panAnimId = null;
 
-let _panRenderTimer = null;
 function panToNode(id) {
   const n = nodeMap[id]; if (!n) return;
   const rect = graphView.getBoundingClientRect();
   pan.x = rect.width / 2 - n.x * zoom;
   pan.y = rect.height / 2 - n.y * zoom;
-  graphWorld.classList.add('smooth');
   updateWorldTransform();
-  clearTimeout(_panRenderTimer);
-  _panRenderTimer = setTimeout(() => {
-    graphWorld.classList.remove('smooth');
-    renderGraph();
-  }, 200);
+}
+
+// Check if a node is visible in the current viewport
+function isNodeVisible(id) {
+  const n = nodeMap[id]; if (!n) return false;
+  const rect = graphView.getBoundingClientRect();
+  const sx = n.x * zoom + pan.x;
+  const sy = n.y * zoom + pan.y;
+  const pad = 40;
+  return sx > pad && sx < rect.width - pad && sy > pad && sy < rect.height - pad;
+}
+
+// Lightweight selection update — only touches the affected nodes + edges
+function updateSelection(oldId, newId) {
+  const edges = getVisibleEdges();
+  // Update old node
+  if (oldId != null) {
+    const el = nodeElements.get(oldId);
+    if (el) {
+      el.classList.remove('selected', 'dim');
+      if (newId) {
+        const isConn = edges.some(e =>
+          (e.from === newId && e.to === oldId) || (e.to === newId && e.from === oldId)
+        );
+        if (!isConn) el.classList.add('dim');
+      }
+    }
+  }
+  // Update new node
+  if (newId != null) {
+    const el = nodeElements.get(newId);
+    if (el) {
+      el.classList.add('selected');
+      el.classList.remove('dim');
+    }
+  }
+  // Update dim on all other visible nodes
+  for (const [nid, el] of nodeElements) {
+    if (nid === oldId || nid === newId) continue;
+    if (newId) {
+      const isConn = edges.some(e =>
+        (e.from === newId && e.to === nid) || (e.to === newId && e.from === nid)
+      );
+      el.classList.toggle('dim', !isConn);
+    } else {
+      el.classList.remove('dim');
+    }
+    el.classList.remove('selected');
+  }
+  // Update edge highlights
+  for (const [key, line] of edgeElements) {
+    const hl = newId && (key.startsWith(newId + '-') || key.endsWith('-' + newId));
+    line.classList.toggle('hl', !!hl);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
