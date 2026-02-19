@@ -531,9 +531,9 @@ function syncNodeElements(visibleNodes) {
       nodeElements.set(node.id, el);
     }
 
-    // Update position
-    el.style.setProperty('--nx', node.x + 'px');
-    el.style.setProperty('--ny', node.y + 'px');
+    // Update position via transform (skips Layout, composite-only)
+    const _yOff = node.isRoot ? -11 : -7;
+    el.style.transform = `translate(calc(${node.x}px - 50%),${node.y + _yOff}px)`;
     el.style.setProperty('--nc', node.color || '#7c6fef');
 
     // Update classes
@@ -922,18 +922,21 @@ document.addEventListener('keydown', e => {
     if (!selectedNode) {
       const r = cn().find(n => n.isRoot) || cn()[0];
       if (r) {
-        const old = selectedNode;
         selectedNode = r.id;
-        updateSelection(old, r.id);
+        const el = nodeElements.get(r.id);
+        if (el) el.classList.add('selected');
         if (!isNodeVisible(r.id)) panToNode(r.id);
       }
       return;
     }
     const t = findDir(selectedNode, e.key);
     if (t) {
-      const old = selectedNode;
+      // Bare minimum: swap .selected on 2 nodes (no dim/edge updates)
+      const oldEl = nodeElements.get(selectedNode);
+      if (oldEl) oldEl.classList.remove('selected');
       selectedNode = t.id;
-      updateSelection(old, t.id);
+      const newEl = nodeElements.get(t.id);
+      if (newEl) newEl.classList.add('selected');
       if (!isNodeVisible(t.id)) panToNode(t.id);
     }
   }
@@ -979,49 +982,6 @@ function isNodeVisible(id) {
   return sx > pad && sx < rect.width - pad && sy > pad && sy < rect.height - pad;
 }
 
-// Lightweight selection update — only touches the affected nodes + edges
-function updateSelection(oldId, newId) {
-  const edges = getVisibleEdges();
-  // Update old node
-  if (oldId != null) {
-    const el = nodeElements.get(oldId);
-    if (el) {
-      el.classList.remove('selected', 'dim');
-      if (newId) {
-        const isConn = edges.some(e =>
-          (e.from === newId && e.to === oldId) || (e.to === newId && e.from === oldId)
-        );
-        if (!isConn) el.classList.add('dim');
-      }
-    }
-  }
-  // Update new node
-  if (newId != null) {
-    const el = nodeElements.get(newId);
-    if (el) {
-      el.classList.add('selected');
-      el.classList.remove('dim');
-    }
-  }
-  // Update dim on all other visible nodes
-  for (const [nid, el] of nodeElements) {
-    if (nid === oldId || nid === newId) continue;
-    if (newId) {
-      const isConn = edges.some(e =>
-        (e.from === newId && e.to === nid) || (e.to === newId && e.from === nid)
-      );
-      el.classList.toggle('dim', !isConn);
-    } else {
-      el.classList.remove('dim');
-    }
-    el.classList.remove('selected');
-  }
-  // Update edge highlights
-  for (const [key, line] of edgeElements) {
-    const hl = newId && (key.startsWith(newId + '-') || key.endsWith('-' + newId));
-    line.classList.toggle('hl', !!hl);
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // EDIT OVERLAY

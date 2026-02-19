@@ -58,16 +58,15 @@
 
   /* ── Edge Layer ── */
   #edgeLayer{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
-  #edgeLayer line{stroke:rgba(58,59,64,0.5);stroke-width:1.2;transition:x1 0.3s ease-out,y1 0.3s ease-out,x2 0.3s ease-out,y2 0.3s ease-out,stroke 0.15s,stroke-width 0.15s}
+  #edgeLayer line{stroke:rgba(58,59,64,0.5);stroke-width:1.2}
   #edgeLayer line.hl{stroke:rgba(124,111,239,0.5);stroke-width:2}
 
   /* ── Node Layer ── */
   #nodeLayer{position:absolute;top:0;left:0}
 
   /* ── Node Elements ── */
-  .nf-node{position:absolute;left:var(--nx);top:var(--ny);transform:translate(-50%,-7px);display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;-webkit-user-select:none;contain:layout style paint}
-  .nf-node.root{transform:translate(-50%,-11px)}
-  .nf-node.animating{transition:left 0.3s ease-out,top 0.3s ease-out}
+  .nf-node{position:absolute;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;-webkit-user-select:none;contain:layout style paint}
+  .nf-node.animating{transition:transform 0.3s ease-out}
 
   .nf-dot{width:14px;height:14px;border-radius:50%;transition:box-shadow 0.15s,outline 0.15s;position:relative;flex-shrink:0}
   .nf-node.root .nf-dot{width:22px;height:22px}
