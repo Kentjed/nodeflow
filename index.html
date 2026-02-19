@@ -65,7 +65,8 @@
   #nodeLayer{position:absolute;top:0;left:0}
 
   /* ── Node Elements ── */
-  .nf-node{position:absolute;transform:translate(var(--nx),var(--ny));transition:transform 0.3s ease-out;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .nf-node{position:absolute;left:0;top:0;transform:translate(calc(var(--nx) - 7px),calc(var(--ny) - 7px));transition:transform 0.3s ease-out;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .nf-node.root{transform:translate(calc(var(--nx) - 11px),calc(var(--ny) - 11px))}
   .nf-node.dragging{transition:none!important}
   .nf-node.dragging .nf-dot{transition:none!important}
 
