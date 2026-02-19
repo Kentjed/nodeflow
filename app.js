@@ -479,10 +479,14 @@ function syncNodeElements(visibleNodes) {
       el.className = 'nf-node';
       el.dataset.nid = node.id;
 
+      // Anchor wrapper — centers content on the (x,y) point
+      const anchor = document.createElement('div');
+      anchor.className = 'nf-anchor';
+
       // Dot
       const dot = document.createElement('div');
       dot.className = 'nf-dot';
-      el.appendChild(dot);
+      anchor.appendChild(dot);
 
       // Note indicator (inside dot)
       const noteInd = document.createElement('div');
@@ -493,7 +497,7 @@ function syncNodeElements(visibleNodes) {
       // Label
       const label = document.createElement('div');
       label.className = 'nf-label';
-      el.appendChild(label);
+      anchor.appendChild(label);
 
       // Progress bar
       const prog = document.createElement('div');
@@ -501,20 +505,21 @@ function syncNodeElements(visibleNodes) {
       const progFill = document.createElement('div');
       progFill.className = 'nf-progress-fill';
       prog.appendChild(progFill);
-      el.appendChild(prog);
+      anchor.appendChild(prog);
 
-      // Collapse button (added dynamically)
+      // Collapse button
       const colBtn = document.createElement('div');
       colBtn.className = 'nf-collapse-btn';
       colBtn.style.display = 'none';
-      el.appendChild(colBtn);
+      anchor.appendChild(colBtn);
 
       // Add button
       const addBtn = document.createElement('div');
       addBtn.className = 'nf-add-btn';
       addBtn.textContent = '+';
-      el.appendChild(addBtn);
+      anchor.appendChild(addBtn);
 
+      el.appendChild(anchor);
       nodeLayer.appendChild(el);
       nodeElements.set(node.id, el);
     }

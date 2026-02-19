@@ -65,10 +65,11 @@
   #nodeLayer{position:absolute;top:0;left:0}
 
   /* ── Node Elements ── */
-  .nf-node{position:absolute;left:0;top:0;transform:translate(calc(var(--nx) - 50%),calc(var(--ny) - 7px));transition:transform 0.3s ease-out;display:flex;flex-direction:column;align-items:center;cursor:pointer;user-select:none;-webkit-user-select:none}
-  .nf-node.root{transform:translate(calc(var(--nx) - 50%),calc(var(--ny) - 11px))}
+  .nf-node{position:absolute;left:0;top:0;transform:translate(var(--nx),var(--ny));transition:transform 0.3s ease-out;cursor:pointer;user-select:none;-webkit-user-select:none}
   .nf-node.dragging{transition:none!important}
-  .nf-node.dragging .nf-dot{transition:none!important}
+  .nf-node.dragging .nf-anchor{transition:none!important}
+  .nf-anchor{display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-7px);position:relative}
+  .nf-node.root .nf-anchor{transform:translate(-50%,-11px)}
 
   .nf-dot{width:14px;height:14px;border-radius:50%;transition:box-shadow 0.15s,outline 0.15s;position:relative;flex-shrink:0}
   .nf-node.root .nf-dot{width:22px;height:22px}
