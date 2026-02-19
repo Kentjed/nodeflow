@@ -1616,7 +1616,7 @@ function exportMarkdown() {
     if (node.isRoot) {
       md += node.notes ? node.notes + '\n\n' : '';
     } else {
-      md += indent + '- **' + node.label + '**' + statusTag + '\n';
+      md += indent + '- ' + node.label + statusTag + '\n';
       if (node.notes) { node.notes.split('\n').forEach(line => { md += indent + '  ' + line + '\n'; }); }
     }
     const children = getChildren(nodeId);
@@ -1628,7 +1628,7 @@ function exportMarkdown() {
   function markRooted(id) { rooted.add(id); getChildren(id).forEach(c => markRooted(c.id)); }
   if (root) markRooted(root.id);
   page.nodes.filter(n => !rooted.has(n.id)).forEach(n => {
-    md += '\n- **' + n.label + '**' + (n.status && n.status !== 'none' ? ' [' + n.status.toUpperCase() + ']' : '') + '\n';
+    md += '\n- ' + n.label + (n.status && n.status !== 'none' ? ' [' + n.status.toUpperCase() + ']' : '') + '\n';
     if (n.notes) n.notes.split('\n').forEach(line => { md += '  ' + line + '\n'; });
   });
 
