@@ -939,12 +939,15 @@ function findDir(fid, dir) {
 // Pan animation
 let panTarget = null, panAnimId = null;
 
+let _panRenderTimer = null;
 function panToNode(id) {
   const n = nodeMap[id]; if (!n) return;
   const rect = graphView.getBoundingClientRect();
   pan.x = rect.width / 2 - n.x * zoom;
   pan.y = rect.height / 2 - n.y * zoom;
-  renderGraph();
+  updateWorldTransform(); // instant CSS-only camera snap
+  clearTimeout(_panRenderTimer);
+  _panRenderTimer = setTimeout(() => renderGraph(), 100); // highlights after user stops
 }
 
 // ═══════════════════════════════════════════════════════════════════
