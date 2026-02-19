@@ -319,6 +319,7 @@ function deleteNode(id) {
   markDirty(true); // immediate save for destructive ops
   renderSidebar();
   layoutPage();
+  enableNodeTransitions();
   renderGraph();
 }
 
@@ -329,6 +330,7 @@ function addChild(pid) {
   selectedNode = id;
   newNodePending = id;
   layoutPage();
+  enableNodeTransitions();
   renderGraph();
   startEdit(id);
   return id;
@@ -356,6 +358,7 @@ function toggleCollapse(id) {
   n.collapsed = !n.collapsed;
   markDirty();
   layoutPage();
+  enableNodeTransitions();
   renderGraph();
 }
 
@@ -411,6 +414,15 @@ function layoutRadialTree(rootId, cx, cy) {
 
   // Full circle for root's children
   layoutChildren(rootId, root.manualPosition ? root.x : cx, root.manualPosition ? root.y : cy, 0, Math.PI * 2, 0);
+}
+
+let _animTimer = null;
+function enableNodeTransitions() {
+  for (const [, el] of nodeElements) el.classList.add('animating');
+  clearTimeout(_animTimer);
+  _animTimer = setTimeout(() => {
+    for (const [, el] of nodeElements) el.classList.remove('animating');
+  }, 350);
 }
 
 function layoutPage() {
@@ -1296,6 +1308,7 @@ document.getElementById('relayoutBtn').addEventListener('click', () => {
   // Clear all manual positions and re-layout
   cn().forEach(n => { n.manualPosition = false; });
   layoutPage();
+  enableNodeTransitions();
   renderGraph();
 });
 document.getElementById('clearBtn').addEventListener('click', clearPage);
