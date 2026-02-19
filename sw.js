@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nodeflow-v4';
+const CACHE_NAME = 'nodeflow-v5';
 const ASSETS = [
   '/nodeflow/',
   '/nodeflow/index.html',
