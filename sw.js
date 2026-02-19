@@ -1,7 +1,8 @@
-const CACHE_NAME = 'nodeflow-v3';
+const CACHE_NAME = 'nodeflow-v4';
 const ASSETS = [
   '/nodeflow/',
   '/nodeflow/index.html',
+  '/nodeflow/app.js',
   '/nodeflow/manifest.json',
   '/nodeflow/icon-192.png',
   '/nodeflow/icon-512.png'
