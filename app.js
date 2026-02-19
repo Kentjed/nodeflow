@@ -942,21 +942,9 @@ let panTarget = null, panAnimId = null;
 function panToNode(id) {
   const n = nodeMap[id]; if (!n) return;
   const rect = graphView.getBoundingClientRect();
-  const tx = rect.width / 2 - n.x * zoom;
-  const ty = rect.height / 2 - n.y * zoom;
-  panTarget = { tx, ty, sx: pan.x, sy: pan.y, t0: performance.now(), dur: 150 };
-  if (!panAnimId) panAnimId = requestAnimationFrame(animatePan);
-}
-
-function animatePan() {
-  if (!panTarget) { panAnimId = null; return; }
-  const t = Math.min(1, (performance.now() - panTarget.t0) / panTarget.dur);
-  const ease = 1 - Math.pow(1 - t, 3);
-  pan.x = panTarget.sx + (panTarget.tx - panTarget.sx) * ease;
-  pan.y = panTarget.sy + (panTarget.ty - panTarget.sy) * ease;
-  updateWorldTransform();
-  if (t >= 1) { panTarget = null; panAnimId = null; renderGraph(); }
-  else panAnimId = requestAnimationFrame(animatePan);
+  pan.x = rect.width / 2 - n.x * zoom;
+  pan.y = rect.height / 2 - n.y * zoom;
+  renderGraph();
 }
 
 // ═══════════════════════════════════════════════════════════════════
