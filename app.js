@@ -1217,9 +1217,11 @@ function showContext(nodeId, cx, cy) {
   selectedNode = nodeId;
   const menu = document.getElementById('contextMenu');
 
-  // Populate dynamic unlink buttons
+  // Populate dynamic unlink/remove-link buttons
   const unlinkContainer = document.getElementById('ctxUnlinkContainer');
   unlinkContainer.innerHTML = '';
+
+  // Show "Unlink from [parent]" when this node has multiple parents
   const allParents = getParentIds(nodeId);
   if (allParents.length > 1) {
     allParents.forEach(pid => {
@@ -1234,6 +1236,18 @@ function showContext(nodeId, cx, cy) {
       unlinkContainer.appendChild(btn);
     });
   }
+
+  // Show "Remove link to [child]" for outgoing link edges from this node
+  const outgoingLinks = ce().filter(e => e.from === nodeId && e.type === 'link');
+  outgoingLinks.forEach(edge => {
+    const child = nodeMap[edge.to];
+    if (!child) return;
+    const btn = document.createElement('button');
+    btn.dataset.action = 'removeLink';
+    btn.dataset.child = edge.to;
+    btn.textContent = '\u2702 Remove link to ' + (child.label || 'Untitled');
+    unlinkContainer.appendChild(btn);
+  });
 
   let left = cx, top = cy;
   if (left + 170 > window.innerWidth) left = window.innerWidth - 178;
@@ -1265,6 +1279,10 @@ document.getElementById('contextMenu').addEventListener('click', e => {
   if (a === 'unlink') {
     const parentId = parseInt(btn.dataset.parent);
     unlinkFromParent(contextNodeId, parentId);
+  }
+  if (a === 'removeLink') {
+    const childId = parseInt(btn.dataset.child);
+    removeLinkEdge(contextNodeId, childId);
   }
   hideContext();
 });
@@ -1300,6 +1318,15 @@ function unlinkFromParent(nodeId, parentId) {
   renderGraph();
   renderSidebar();
   showToast('Unlinked');
+}
+
+function removeLinkEdge(fromId, toId) {
+  const page = cp(); if (!page) return;
+  page.edges = page.edges.filter(e => !(e.from === fromId && e.to === toId && e.type === 'link'));
+  rnm();
+  markDirty();
+  renderGraph();
+  showToast('Link removed');
 }
 
 // Status dots in context menu
