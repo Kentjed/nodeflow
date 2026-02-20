@@ -33,6 +33,10 @@ const DROP_RADIUS = 30;
 let nodeMap = {};
 let isMobile = window.innerWidth <= 768;
 
+// Undo stack
+const undoStack = [];
+const MAX_UNDO = 30;
+
 // Touch state
 let longPressTimer = null, touchMoved = false, lastTouchDist = 0, lastTouchMid = null;
 let touchStartTime = 0, singleTouchNode = null;
@@ -338,6 +342,7 @@ function findDropTarget(draggedId, wx, wy) {
 
 function reparentNode(nodeId, newParentId) {
   const page = cp(); if (!page) return;
+  pushUndo();
   // Remove old primary parent edge
   page.edges = page.edges.filter(e => !(e.to === nodeId && e.type !== 'link'));
   // Add new primary edge
@@ -372,6 +377,26 @@ function getVisibleEdges() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// UNDO
+// ═══════════════════════════════════════════════════════════════════
+
+function pushUndo() {
+  const snapshot = JSON.stringify(getAll());
+  undoStack.push(snapshot);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+}
+
+function performUndo() {
+  if (!undoStack.length) { showToast('Nothing to undo'); return; }
+  const snapshot = JSON.parse(undoStack.pop());
+  loadAll(snapshot);
+  layoutPage();
+  renderGraph();
+  markDirty();
+  showToast('Undone');
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // NODE CRUD
 // ═══════════════════════════════════════════════════════════════════
 
@@ -397,17 +422,22 @@ function deleteNode(id) {
   const page = cp(); if (!page) return;
   const node = nodeMap[id]; if (!node || node.isRoot) return;
 
-  // DAG-aware deletion: BFS to collect descendants, but skip any
-  // descendant that has a parent outside the deletion set
+  // DAG-aware deletion: only cascade through PRIMARY edges.
+  // Link edges are cross-references — never cause cascade deletion.
+  // Skip any child that has another primary parent outside the deletion set.
+  pushUndo();
   const del = new Set([id]);
   let changed = true;
   while (changed) {
     changed = false;
     for (const e of page.edges) {
+      if (e.type === 'link') continue; // never cascade through links
       if (del.has(e.from) && !del.has(e.to)) {
-        // Check if this child has another parent NOT in del set
-        const otherParent = page.edges.some(e2 => e2.to === e.to && !del.has(e2.from));
-        if (!otherParent) {
+        // Check if this child has another primary parent NOT in del set
+        const otherPrimary = page.edges.some(e2 =>
+          e2.to === e.to && e2.type !== 'link' && !del.has(e2.from)
+        );
+        if (!otherPrimary) {
           del.add(e.to);
           changed = true;
         }
@@ -415,6 +445,7 @@ function deleteNode(id) {
     }
   }
   page.nodes = page.nodes.filter(n => !del.has(n.id));
+  // Remove primary edges for deleted nodes + clean up any link edges referencing them
   page.edges = page.edges.filter(e => !del.has(e.from) && !del.has(e.to));
   if (selectedNode === id) selectedNode = null;
   // Clean up DOM elements for deleted nodes
@@ -1070,6 +1101,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Tab') { e.preventDefault(); stopEdit(true); if (selectedNode) addChild(selectedNode); }
     return;
   }
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
   if (e.key === 'Escape') { if (linkSourceId) cancelLinkMode(); selectedNode = null; hideContext(); hideTemplates(); renderGraph(); }
   if (e.key === 'Enter' && selectedNode) { openNote(selectedNode); e.preventDefault(); }
   if (e.key === 'F2' && selectedNode) { startEdit(selectedNode); e.preventDefault(); }
@@ -1310,6 +1342,7 @@ function unlinkFromParent(nodeId, parentId) {
     showToast('Cannot unlink — only one parent');
     return;
   }
+  pushUndo();
   page.edges = page.edges.filter(e => !(e.from === parentId && e.to === nodeId));
   rnm();
   markDirty();
@@ -1322,6 +1355,7 @@ function unlinkFromParent(nodeId, parentId) {
 
 function removeLinkEdge(fromId, toId) {
   const page = cp(); if (!page) return;
+  pushUndo();
   page.edges = page.edges.filter(e => !(e.from === fromId && e.to === toId && e.type === 'link'));
   rnm();
   markDirty();
@@ -1574,6 +1608,7 @@ function hideTemplates() {
 // ── Toolbar ──
 document.getElementById('addTaskBtn').addEventListener('click', addNodeAtCenter);
 document.getElementById('tmplBtn').addEventListener('click', toggleTemplates);
+document.getElementById('undoBtn').addEventListener('click', performUndo);
 document.getElementById('fitBtn').addEventListener('click', fitView);
 document.getElementById('relayoutBtn').addEventListener('click', () => {
   // Clear all manual positions and re-layout
@@ -1650,6 +1685,7 @@ function renamePage(id, name) {
 function clearPage() {
   const page = cp();
   if (!page || !confirm('Clear all nodes?')) return;
+  pushUndo();
   page.nodes = [];
   page.edges = [];
   clearDOMPools();
