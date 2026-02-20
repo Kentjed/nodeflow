@@ -91,9 +91,10 @@
   .nf-node.root .nf-label{font-size:14px;font-weight:700}
   .nf-node.selected .nf-label{color:#fff}
 
-  /* Collapse button */
-  .nf-collapse-btn{position:absolute;left:-18px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;border:1px solid #555;background:#2a2b30;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#888;cursor:pointer;line-height:1}
-  .nf-collapse-btn.collapsed{background:#ef8f6f;border-color:#ef8f6f;color:#fff}
+  /* Collapse button — hidden by default, shown on hover or when collapsed */
+  .nf-collapse-btn{position:absolute;left:-18px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;border:1px solid #555;background:#2a2b30;display:none;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#888;cursor:pointer;line-height:1}
+  .nf-node.hovered .nf-collapse-btn.has-children{display:flex}
+  .nf-collapse-btn.collapsed{background:#ef8f6f;border-color:#ef8f6f;color:#fff;display:flex}
 
   /* Add child button */
   .nf-add-btn{position:absolute;top:-6px;right:-16px;width:14px;height:14px;border-radius:50%;background:#2a2b30;border:1px solid #555;color:#7c6fef;font-size:11px;font-weight:600;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
@@ -196,7 +197,7 @@
     .graph-toolbar button{padding:6px 8px;font-size:10px}
     .page-item .page-delete{opacity:0.5}
     .color-dot,.ctx-status-dot{width:24px;height:24px}
-    .nf-add-btn{display:none!important}
+    .nf-add-btn,.nf-collapse-btn:not(.collapsed){display:none!important}
   }
 </style>
 </head>

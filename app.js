@@ -625,10 +625,9 @@ function syncNodeElements(visibleNodes) {
       prog.appendChild(progFill);
       el.appendChild(prog);
 
-      // Collapse button
+      // Collapse button (CSS controls visibility via hover/collapsed)
       const colBtn = document.createElement('div');
       colBtn.className = 'nf-collapse-btn';
-      colBtn.style.display = 'none';
       el.appendChild(colBtn);
 
       // Add button
@@ -682,16 +681,12 @@ function syncNodeElements(visibleNodes) {
       label.textContent = node.label || 'Untitled';
     }
 
-    // Collapse button
+    // Collapse button — CSS handles visibility via hover/.collapsed/.has-children
     const children = getChildren(node.id);
     const colBtn = el.querySelector('.nf-collapse-btn');
-    if (children.length > 0) {
-      colBtn.style.display = 'flex';
-      colBtn.textContent = node.collapsed ? children.length.toString() : '\u2212';
-      colBtn.classList.toggle('collapsed', !!node.collapsed);
-    } else {
-      colBtn.style.display = 'none';
-    }
+    colBtn.classList.toggle('has-children', children.length > 0);
+    colBtn.classList.toggle('collapsed', !!node.collapsed && children.length > 0);
+    colBtn.textContent = children.length > 0 ? (node.collapsed ? children.length.toString() : '\u2212') : '';
 
     // Progress bar
     const prog = el.querySelector('.nf-progress');
@@ -861,6 +856,11 @@ graphView.addEventListener('mouseup', e => {
       if (e.shiftKey) {
         // Shift+drag: create link edge (keep existing parent)
         addLinkEdge(dropTarget, draggingNode);
+        // Snap node back to its layout position
+        const node = nodeMap[draggingNode];
+        if (node) node.manualPosition = false;
+        layoutPage();
+        enableNodeTransitions();
       } else {
         // Default drag onto target: reparent
         reparentNode(draggingNode, dropTarget);
