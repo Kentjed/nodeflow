@@ -28,6 +28,8 @@ let pan = { x: 0, y: 0 }, zoom = 1;
 let selectedNode = null, hoveredNode = null, draggingNode = null;
 let panning = false, panStart = { x: 0, y: 0 }, dragOffset = { x: 0, y: 0 };
 let contextNodeId = null, editingNode = null, newNodePending = null, openNoteId = null;
+let dropTarget = null, linkSourceId = null;
+const DROP_RADIUS = 30;
 let nodeMap = {};
 let isMobile = window.innerWidth <= 768;
 
@@ -234,7 +236,7 @@ function getDepth(nodeId) {
   let d = 0, cur = nodeId;
   const edges = ce();
   for (let i = 0; i < 20; i++) {
-    const p = edges.find(e => e.to === cur);
+    const p = edges.find(e => e.to === cur && e.type !== 'link');
     if (!p) break;
     d++; cur = p.from;
   }
@@ -245,9 +247,21 @@ function getChildren(nodeId) {
   return ce().filter(e => e.from === nodeId).map(e => nodeMap[e.to]).filter(Boolean);
 }
 
+function getPrimaryChildren(nodeId) {
+  return ce().filter(e => e.from === nodeId && e.type !== 'link').map(e => nodeMap[e.to]).filter(Boolean);
+}
+
 function getParentId(nodeId) {
-  const e = ce().find(e => e.to === nodeId);
+  const e = ce().find(e => e.to === nodeId && e.type !== 'link');
   return e ? e.from : null;
+}
+
+function getParentIds(nodeId) {
+  return ce().filter(e => e.to === nodeId).map(e => e.from);
+}
+
+function getLinkParentIds(nodeId) {
+  return ce().filter(e => e.to === nodeId && e.type === 'link').map(e => e.from);
 }
 
 function getAncestorPath(nodeId) {
@@ -263,12 +277,92 @@ function getAncestorPath(nodeId) {
 }
 
 function isCollapsedAncestor(nodeId) {
-  let cur = getParentId(nodeId);
-  while (cur) {
-    if (nodeMap[cur]?.collapsed) return true;
-    cur = getParentId(cur);
+  // Multi-parent aware: node visible if ANY parent path is uncollapsed
+  const allParents = getParentIds(nodeId);
+  if (allParents.length === 0) return false;
+
+  for (const pid of allParents) {
+    let collapsed = false;
+    let cur = pid;
+    while (cur) {
+      if (nodeMap[cur]?.collapsed) { collapsed = true; break; }
+      cur = getParentId(cur);
+    }
+    if (!collapsed) return false; // at least one path is fully uncollapsed
+  }
+  return true; // all paths are collapsed
+}
+
+function wouldCreateCycle(targetId, sourceId) {
+  // BFS upward from target — if we reach source, it would create a cycle
+  const visited = new Set();
+  const queue = [targetId];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur === sourceId) return true;
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    const parents = getParentIds(cur);
+    for (const pid of parents) queue.push(pid);
   }
   return false;
+}
+
+function isDescendant(ancestorId, nodeId) {
+  const visited = new Set();
+  const queue = [ancestorId];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    const children = getPrimaryChildren(cur);
+    for (const c of children) {
+      if (c.id === nodeId) return true;
+      queue.push(c.id);
+    }
+  }
+  return false;
+}
+
+function findDropTarget(draggedId, wx, wy) {
+  let best = null, bestDist = DROP_RADIUS;
+  for (const n of getVisibleNodes()) {
+    if (n.id === draggedId) continue;
+    if (isDescendant(draggedId, n.id)) continue; // can't drop onto own descendant
+    const dx = n.x - wx, dy = n.y - wy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist) { bestDist = dist; best = n.id; }
+  }
+  return best;
+}
+
+function reparentNode(nodeId, newParentId) {
+  const page = cp(); if (!page) return;
+  // Remove old primary parent edge
+  page.edges = page.edges.filter(e => !(e.to === nodeId && e.type !== 'link'));
+  // Add new primary edge
+  page.edges.push({ from: newParentId, to: nodeId, type: 'primary' });
+  const node = nodeMap[nodeId];
+  if (node) node.manualPosition = false;
+  rnm();
+  markDirty();
+  layoutPage();
+  enableNodeTransitions();
+  renderGraph();
+  renderSidebar();
+}
+
+function addLinkEdge(fromId, toId) {
+  const page = cp(); if (!page) return;
+  // Don't add duplicate
+  if (page.edges.some(e => e.from === fromId && e.to === toId)) return;
+  // Don't link to self
+  if (fromId === toId) return;
+  page.edges.push({ from: fromId, to: toId, type: 'link' });
+  rnm();
+  markDirty();
+  renderGraph();
+  showToast('Linked');
 }
 
 function getVisibleNodes() { return cn().filter(n => !isCollapsedAncestor(n.id)); }
@@ -292,7 +386,7 @@ function createNode(label, wx, wy, parentId, isRoot) {
     manualPosition: false
   };
   page.nodes.push(node);
-  if (parentId != null) page.edges.push({ from: parentId, to: id });
+  if (parentId != null) page.edges.push({ from: parentId, to: id, type: 'primary' });
   rnm();
   markDirty();
   renderSidebar();
@@ -302,10 +396,23 @@ function createNode(label, wx, wy, parentId, isRoot) {
 function deleteNode(id) {
   const page = cp(); if (!page) return;
   const node = nodeMap[id]; if (!node || node.isRoot) return;
-  const del = new Set(), q = [id];
-  while (q.length) {
-    const c = q.shift(); del.add(c);
-    page.edges.filter(e => e.from === c).forEach(e => q.push(e.to));
+
+  // DAG-aware deletion: BFS to collect descendants, but skip any
+  // descendant that has a parent outside the deletion set
+  const del = new Set([id]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const e of page.edges) {
+      if (del.has(e.from) && !del.has(e.to)) {
+        // Check if this child has another parent NOT in del set
+        const otherParent = page.edges.some(e2 => e2.to === e.to && !del.has(e2.from));
+        if (!otherParent) {
+          del.add(e.to);
+          changed = true;
+        }
+      }
+    }
   }
   page.nodes = page.nodes.filter(n => !del.has(n.id));
   page.edges = page.edges.filter(e => !del.has(e.from) && !del.has(e.to));
@@ -368,13 +475,16 @@ function toggleCollapse(id) {
 
 const _subtreeCache = new Map();
 
-function subtreeSize(nodeId) {
+function subtreeSize(nodeId, _visited) {
   if (_subtreeCache.has(nodeId)) return _subtreeCache.get(nodeId);
+  if (!_visited) _visited = new Set();
+  if (_visited.has(nodeId)) return 0;
+  _visited.add(nodeId);
   const node = nodeMap[nodeId];
   if (!node || node.collapsed) { _subtreeCache.set(nodeId, 1); return 1; }
-  const children = getChildren(nodeId);
+  const children = getPrimaryChildren(nodeId);
   let s = 1;
-  for (const c of children) s += subtreeSize(c.id);
+  for (const c of children) s += subtreeSize(c.id, _visited);
   _subtreeCache.set(nodeId, s);
   return s;
 }
@@ -385,7 +495,7 @@ function layoutRadialTree(rootId, cx, cy) {
 
   function layoutChildren(parentId, parentX, parentY, startAngle, endAngle, depth) {
     const parent = nodeMap[parentId]; if (!parent || parent.collapsed) return;
-    const children = getChildren(parentId);
+    const children = getPrimaryChildren(parentId);
     if (!children.length) return;
 
     const radius = Math.max(MIN_RADIUS, BASE_RADIUS * Math.pow(DEPTH_FALLOFF, depth));
@@ -430,8 +540,8 @@ function layoutPage() {
   const nodes = cn(), edges = ce();
   if (!nodes.length) return;
 
-  // Find roots (nodes with no parent)
-  const hasParent = new Set(edges.map(e => e.to));
+  // Find roots (nodes with no primary parent)
+  const hasParent = new Set(edges.filter(e => e.type !== 'link').map(e => e.to));
   const roots = nodes.filter(n => !hasParent.has(n.id));
   const orphans = []; // non-root nodes without parents shouldn't exist, but handle gracefully
 
@@ -542,6 +652,7 @@ function syncNodeElements(visibleNodes) {
     if (selectedNode === node.id) cls.push('selected');
     if (hoveredNode === node.id) cls.push('hovered');
     if (draggingNode === node.id) cls.push('dragging');
+    if (dropTarget === node.id) cls.push('drop-target');
     // Dim: selected exists and this isn't selected or connected
     if (selectedNode && selectedNode !== node.id) {
       const isConn = edges.some(e =>
@@ -628,6 +739,10 @@ function syncEdgeElements(visibleEdges) {
     line.setAttribute('x2', to.x);
     line.setAttribute('y2', to.y);
 
+    // Link edge styling
+    const isLink = edge.type === 'link';
+    line.classList.toggle('link-edge', isLink);
+
     // Highlight if connected to selected
     const hl = selectedNode && (edge.from === selectedNode || edge.to === selectedNode);
     line.classList.toggle('hl', hl);
@@ -663,6 +778,18 @@ graphView.addEventListener('mousedown', e => {
       e.target.closest('.template-dropdown') || e.target.closest('.hamburger')) return;
 
   const nid = nodeIdFromEvent(e);
+
+  // Link mode: clicking a node creates the link
+  if (linkSourceId) {
+    if (nid != null && nid !== linkSourceId && !wouldCreateCycle(nid, linkSourceId)) {
+      addLinkEdge(nid, linkSourceId);
+    } else if (nid === linkSourceId) {
+      showToast('Cannot link to self');
+    }
+    cancelLinkMode();
+    renderGraph();
+    return;
+  }
 
   // Check collapse button
   if (e.target.closest('.nf-collapse-btn')) {
@@ -708,6 +835,8 @@ graphView.addEventListener('mousemove', e => {
     node.x = (sx - pan.x) / zoom;
     node.y = (sy - pan.y) / zoom;
     node.manualPosition = true;
+    // Drop target detection
+    dropTarget = findDropTarget(draggingNode, node.x, node.y);
     markDirty();
     renderGraph();
   } else if (panning) {
@@ -721,13 +850,23 @@ graphView.addEventListener('mousemove', e => {
       hoveredNode = nid;
       renderGraph();
     }
-    graphView.style.cursor = nid ? 'pointer' : 'grab';
+    graphView.style.cursor = linkSourceId ? 'crosshair' : (nid ? 'pointer' : 'grab');
   }
 });
 
-graphView.addEventListener('mouseup', () => {
+graphView.addEventListener('mouseup', e => {
   if (isMobile) return;
   if (draggingNode) {
+    if (dropTarget) {
+      if (e.shiftKey) {
+        // Shift+drag: create link edge (keep existing parent)
+        addLinkEdge(dropTarget, draggingNode);
+      } else {
+        // Default drag onto target: reparent
+        reparentNode(draggingNode, dropTarget);
+      }
+      dropTarget = null;
+    }
     draggingNode = null;
     markDirty();
     renderGraph();
@@ -804,6 +943,19 @@ graphView.addEventListener('touchstart', e => {
   }
 
   const nid = nodeIdFromEvent(e);
+
+  // Link mode: tapping a node creates the link
+  if (linkSourceId) {
+    if (nid != null && nid !== linkSourceId && !wouldCreateCycle(nid, linkSourceId)) {
+      addLinkEdge(nid, linkSourceId);
+    } else if (nid === linkSourceId) {
+      showToast('Cannot link to self');
+    }
+    cancelLinkMode();
+    renderGraph();
+    return;
+  }
+
   singleTouchNode = nid != null ? nodeMap[nid] : null;
 
   if (nid != null) {
@@ -860,6 +1012,8 @@ graphView.addEventListener('touchmove', e => {
     node.x = (sx - pan.x) / zoom;
     node.y = (sy - pan.y) / zoom;
     node.manualPosition = true;
+    // Drop target detection
+    dropTarget = findDropTarget(draggingNode, node.x, node.y);
     markDirty();
     renderGraph();
   } else if (panning) {
@@ -878,6 +1032,11 @@ graphView.addEventListener('touchend', e => {
   lastTouchMid = null;
 
   if (draggingNode) {
+    if (dropTarget) {
+      // Touch drag: always reparent (no shift key on touch)
+      reparentNode(draggingNode, dropTarget);
+      dropTarget = null;
+    }
     draggingNode = null;
     markDirty();
     renderGraph();
@@ -911,7 +1070,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Tab') { e.preventDefault(); stopEdit(true); if (selectedNode) addChild(selectedNode); }
     return;
   }
-  if (e.key === 'Escape') { selectedNode = null; hideContext(); hideTemplates(); renderGraph(); }
+  if (e.key === 'Escape') { if (linkSourceId) cancelLinkMode(); selectedNode = null; hideContext(); hideTemplates(); renderGraph(); }
   if (e.key === 'Enter' && selectedNode) { openNote(selectedNode); e.preventDefault(); }
   if (e.key === 'F2' && selectedNode) { startEdit(selectedNode); e.preventDefault(); }
   if (e.key === 'Tab' && selectedNode) { e.preventDefault(); addChild(selectedNode); }
@@ -1057,6 +1216,25 @@ function showContext(nodeId, cx, cy) {
   contextNodeId = nodeId;
   selectedNode = nodeId;
   const menu = document.getElementById('contextMenu');
+
+  // Populate dynamic unlink buttons
+  const unlinkContainer = document.getElementById('ctxUnlinkContainer');
+  unlinkContainer.innerHTML = '';
+  const allParents = getParentIds(nodeId);
+  if (allParents.length > 1) {
+    allParents.forEach(pid => {
+      const parent = nodeMap[pid];
+      if (!parent) return;
+      const edge = ce().find(e => e.from === pid && e.to === nodeId);
+      const edgeType = edge?.type || 'primary';
+      const btn = document.createElement('button');
+      btn.dataset.action = 'unlink';
+      btn.dataset.parent = pid;
+      btn.textContent = (edgeType === 'link' ? '\u2702 Unlink from ' : '\u2702 Detach from ') + (parent.label || 'Untitled');
+      unlinkContainer.appendChild(btn);
+    });
+  }
+
   let left = cx, top = cy;
   if (left + 170 > window.innerWidth) left = window.innerWidth - 178;
   if (top + 280 > window.innerHeight) top = window.innerHeight - 288;
@@ -1082,13 +1260,47 @@ document.getElementById('contextMenu').addEventListener('click', e => {
   if (a === 'rename') startEdit(contextNodeId);
   if (a === 'addChild') addChild(contextNodeId);
   if (a === 'collapse') toggleCollapse(contextNodeId);
+  if (a === 'linkTo') startLinkMode(contextNodeId);
   if (a === 'delete') deleteNode(contextNodeId);
+  if (a === 'unlink') {
+    const parentId = parseInt(btn.dataset.parent);
+    unlinkFromParent(contextNodeId, parentId);
+  }
   hideContext();
 });
 
 document.addEventListener('click', e => {
   if (!document.getElementById('contextMenu').contains(e.target)) hideContext();
 });
+
+// ── Link Mode ──
+function startLinkMode(sourceId) {
+  linkSourceId = sourceId;
+  graphView.classList.add('link-mode');
+  showToast('Click a node to link to...');
+}
+
+function cancelLinkMode() {
+  linkSourceId = null;
+  graphView.classList.remove('link-mode');
+}
+
+function unlinkFromParent(nodeId, parentId) {
+  const page = cp(); if (!page) return;
+  const allParents = getParentIds(nodeId);
+  if (allParents.length <= 1) {
+    showToast('Cannot unlink — only one parent');
+    return;
+  }
+  page.edges = page.edges.filter(e => !(e.from === parentId && e.to === nodeId));
+  rnm();
+  markDirty();
+  layoutPage();
+  enableNodeTransitions();
+  renderGraph();
+  renderSidebar();
+  showToast('Unlinked');
+}
 
 // Status dots in context menu
 (function () {
@@ -1169,6 +1381,17 @@ function refreshNoteView() {
   cur.style.color = '#c4c4c8';
   cur.style.cursor = 'default';
   bc.appendChild(cur);
+
+  // "Also linked from" indicator for nodes with link parents
+  const linkIndicator = document.getElementById('noteLinkIndicator');
+  const linkParents = getLinkParentIds(openNoteId);
+  if (linkParents.length > 0) {
+    const names = linkParents.map(pid => nodeMap[pid]?.label || 'Untitled').join(', ');
+    linkIndicator.textContent = 'Also linked from: ' + names;
+    linkIndicator.style.display = 'block';
+  } else {
+    linkIndicator.style.display = 'none';
+  }
 
   // Subtasks
   const children = getChildren(openNoteId);
@@ -1553,7 +1776,7 @@ function getAll() {
         notes: n.notes || '', status: n.status || 'none',
         collapsed: !!n.collapsed
       })),
-      edges: p.edges
+      edges: p.edges.map(e => ({ from: e.from, to: e.to, type: e.type || 'primary' }))
     })),
     activePageId, nextNodeId, nextPageId
   };
@@ -1568,7 +1791,8 @@ function loadAll(d) {
       status: n.status || 'none',
       collapsed: !!n.collapsed,
       manualPosition: false
-    }))
+    })),
+    edges: (p.edges || []).map(e => ({ ...e, type: e.type || 'primary' }))
   }));
   nextNodeId = d.nextNodeId || 1;
   nextPageId = d.nextPageId || 1;
@@ -1606,8 +1830,10 @@ function handleFileLoad(e) {
 function exportMarkdown() {
   const page = cp();
   if (!page) { showToast('No page'); return; }
-  const root = page.nodes.find(n => n.isRoot);
+  const roots = page.nodes.filter(n => n.isRoot);
   let md = '# ' + page.name + '\n\n';
+
+  const expandedSet = new Set(); // track which nodes had children expanded
 
   function walk(nodeId, depth) {
     const node = nodeMap[nodeId]; if (!node) return;
@@ -1619,15 +1845,24 @@ function exportMarkdown() {
       md += indent + '- ' + node.label + statusTag + '\n';
       if (node.notes) { node.notes.split('\n').forEach(line => { md += indent + '  ' + line + '\n'; }); }
     }
+    // Only expand children on first visit
+    if (expandedSet.has(nodeId)) {
+      const children = getChildren(nodeId);
+      if (children.length > 0) {
+        md += indent + '  *(children shown above)*\n';
+      }
+      return;
+    }
+    expandedSet.add(nodeId);
     const children = getChildren(nodeId);
     children.forEach(c => walk(c.id, node.isRoot ? 0 : depth + 1));
   }
 
-  if (root) walk(root.id, 0);
-  const rooted = new Set();
-  function markRooted(id) { rooted.add(id); getChildren(id).forEach(c => markRooted(c.id)); }
-  if (root) markRooted(root.id);
-  page.nodes.filter(n => !rooted.has(n.id)).forEach(n => {
+  roots.forEach(root => walk(root.id, 0));
+  const visited = new Set();
+  function markVisited(id) { if (visited.has(id)) return; visited.add(id); getChildren(id).forEach(c => markVisited(c.id)); }
+  roots.forEach(r => markVisited(r.id));
+  page.nodes.filter(n => !visited.has(n.id)).forEach(n => {
     md += '\n- ' + n.label + (n.status && n.status !== 'none' ? ' [' + n.status.toUpperCase() + ']' : '') + '\n';
     if (n.notes) n.notes.split('\n').forEach(line => { md += '  ' + line + '\n'; });
   });

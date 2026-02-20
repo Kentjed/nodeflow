@@ -52,6 +52,7 @@
   .main{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden}
   .graph-view{flex:1;position:relative;overflow:hidden;cursor:grab}
   .graph-view.grabbing{cursor:grabbing}
+  .graph-view.link-mode{cursor:crosshair}
 
   /* ── Graph World (pan/zoom container) ── */
   #graphWorld{position:absolute;top:0;left:0;width:0;height:0;transform-origin:0 0}
@@ -60,6 +61,8 @@
   #edgeLayer{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
   #edgeLayer line{stroke:rgba(58,59,64,0.5);stroke-width:1.2}
   #edgeLayer line.hl{stroke:rgba(124,111,239,0.5);stroke-width:2}
+  #edgeLayer line.link-edge{stroke:rgba(124,111,239,0.3);stroke-width:1;stroke-dasharray:6 4}
+  #edgeLayer line.link-edge.hl{stroke:rgba(124,111,239,0.6);stroke-width:1.5}
 
   /* ── Node Layer ── */
   #nodeLayer{position:absolute;top:0;left:0}
@@ -72,6 +75,7 @@
   .nf-node.root .nf-dot{width:22px;height:22px}
   .nf-node.selected .nf-dot{box-shadow:0 0 0 3px var(--nc),0 0 0 5px rgba(255,255,255,0.15)}
   .nf-node.hovered .nf-dot{box-shadow:0 0 0 2px var(--nc)}
+  .nf-node.drop-target .nf-dot{box-shadow:0 0 0 4px rgba(111,239,178,0.6);transform:scale(1.3)}
   .nf-node.dim .nf-dot{opacity:0.25}
   .nf-node.dim .nf-label{opacity:0.15}
 
@@ -251,6 +255,7 @@
       <input type="text" class="note-title-input" id="noteTitleInput" placeholder="Task name..." spellcheck="false">
     </div>
     <div class="note-breadcrumb" id="noteBreadcrumb"></div>
+    <div id="noteLinkIndicator" style="font-size:10px;color:rgba(124,111,239,0.5);padding:0 16px;display:none"></div>
     <div class="note-status-bar" id="noteStatusBar">
       <button class="status-btn" data-s="none">&#x2014; None</button>
       <button class="status-btn" data-s="todo">&#x25CB; To Do</button>
@@ -282,6 +287,9 @@
   <div class="ctx-status-row" id="ctxStatusRow"></div>
   <div style="padding:4px 12px;font-size:10px;color:#555;font-weight:600">COLOR</div>
   <div class="color-dots" id="colorDots"></div>
+  <div class="ctx-divider"></div>
+  <button data-action="linkTo">&#x1F517; Link to...</button>
+  <div id="ctxUnlinkContainer"></div>
   <div class="ctx-divider"></div>
   <button class="danger" data-action="delete">&#x2715; Delete</button>
 </div>
